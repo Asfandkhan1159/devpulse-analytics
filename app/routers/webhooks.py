@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, Header, Body, HTTPException
 from typing import Any
+
+from sqlalchemy.orm import Session 
 from app.config import Settings
 from app.services.webhook_service import save_event
 from app.db.database import get_db
@@ -15,7 +17,7 @@ secret_token = settings.gitlab_token
 # 3. compare incoming token to secret
 allowed_events = ["Push Hook", "Pipeline Hook", "Deployment Hook", "Merge Request Hook"]  # Example allowed events
 @router.post("/gitlab")
-async def gitlab_webhook(x_gitlab_token:str = Header(...), x_gitlab_event:str = Header(...), payload:Any = Body(...), db = Depends(get_db)):
+async def gitlab_webhook(x_gitlab_token:str = Header(...), x_gitlab_event:str = Header(...), payload:Any = Body(...), db: Session = Depends(get_db)):
     if (x_gitlab_token != secret_token):
         raise HTTPException(status_code=401, detail="Unauthorized")
     if (x_gitlab_event not in allowed_events):

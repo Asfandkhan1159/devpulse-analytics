@@ -1,0 +1,16 @@
+
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: devpulse
+      POSTGRES_PASSWORD: devpulse123
+      POSTGRES_DB: devpulse
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

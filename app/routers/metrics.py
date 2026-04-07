@@ -1,25 +1,30 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 
 from app.schemas.metrics import ChangeFailureRateResponse, DeploymentFrequencyResponse, LeadTimeResponse, MeanTimeToRecoveryResponse 
+from app.services.metrics_services import calculate_deployment_frequency
+from app.db.database import get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
 
 
 @router.get("/deployment-frequency", response_model=DeploymentFrequencyResponse)
-def calculate_metrics(project_id: int, days: int = 30):
+def calculate_metrics(project_id: int, days: int = 30, db: Session = Depends(get_db)):
     # Placeholder for actual metrics calculation logic
     # In a real implementation, you would calculate the metrics based on the input data
+    metrics = calculate_deployment_frequency( project_id, days,db)
+
     return DeploymentFrequencyResponse(
         project_id=project_id,
         period_days=days,
         calculated_at=datetime.utcnow(),
-        total_deployments=42,  # Example value
-        daily_average=2.0       # Example value
+        total_deployments=metrics["total_deployments"],
+        daily_average=metrics["daily_average"]
     )
 
 @router.get("/lead-time", response_model=LeadTimeResponse)

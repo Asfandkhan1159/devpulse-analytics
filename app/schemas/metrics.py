@@ -10,6 +10,7 @@ class DeploymentFrequencyResponse(MetricsBase):
     total_deployments: int
     
     daily_average: float
+    frequency_label: str
 
 
 class LeadTimeResponse(MetricsBase):
@@ -23,6 +24,5 @@ class ChangeFailureRateResponse(MetricsBase):
     
 
 class MeanTimeToRecoveryResponse(MetricsBase):
-   
-    average_recovery_time_hours: float
+   avg_mttr: float
    

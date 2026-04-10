@@ -1,4 +1,4 @@
-from app.services.metrics_services import calculate_frequency_label, calculate_deployment_frequency, calculate_lead_time, calculate_change_failure_rate
+from app.services.metrics_services import calculate_frequency_label, calculate_deployment_frequency, calculate_lead_time, calculate_change_failure_rate, calculate_mttr
 from unittest.mock import MagicMock
 from datetime import datetime, timedelta, timezone
 
@@ -47,4 +47,27 @@ def test_calculate_change_failure_rate():
     result = calculate_change_failure_rate(project_id=1, db=mock_db, cutoff=cutoff)
     #assert
     assert result["failure_rate_percentage"] == 50.0  # 10 failed out of 20 total deployments
+
+def test_calculate_mttr():
+    #arrange
+    mock_db = MagicMock()
+    fake_failures = MagicMock()
+    fake_recovery = MagicMock()
+    mock_db.execute.return_value.scalars.return_value.all.return_value = [fake_failures]
+    mock_db.execute.return_value.scalar_one_or_none.return_value = fake_recovery
+    fake_failures.created_at = datetime(2026, 4, 1, 8, 0, 0, tzinfo=timezone.utc)
+    fake_failures.finished_at = datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
+    fake_recovery.created_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
+    print("fake_failures", fake_failures.created_at, fake_failures.finished_at)
+    print("fake_recovery", fake_recovery.created_at, fake_recovery.finished_at)
+    #act
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    result = calculate_mttr(project_id=1, db=mock_db, cutoff=cutoff)
+    #assert
+    assert result["avg_mttr"] == 2.0  # MTTR should be 4 hours based on the mocked data
+
+
+
+
+       
 

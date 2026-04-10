@@ -83,7 +83,9 @@ def calculate_mttr(project_id: int, db: Session, cutoff: datetime):
             Event.created_at > event.finished_at
         )).order_by(Event.created_at).limit(1)).scalar_one_or_none() 
         if recovery:
-            diff = (recovery.created_at - event.created_at).total_seconds() / 3600  # Convert to hours
+            print("event", event.created_at, event.finished_at)           
+            print("recovery", recovery.created_at, recovery.finished_at)
+            diff = (recovery.created_at - event.finished_at).total_seconds() / 3600  # Convert to hours
             recovery_times.append(diff)
     # calculate average time difference
     avg_mttr = sum(recovery_times) / len(recovery_times) if recovery_times else 0

@@ -38,7 +38,7 @@ def calculate_deployment_frequency(project_id:int, cutoff: datetime, db: Session
     days = (datetime.now(timezone.utc) - cutoff).days or 1
     daily_average = total_deployments / days
     frequency_label = calculate_frequency_label(daily_average)
-    print("frquency_label", frequency_label)
+    
 
     return {
         "total_deployments": total_deployments,

@@ -6,7 +6,7 @@ from app.routers import webhooks
 app = FastAPI()
 settings = Settings()
 
-print(f"GitLab Token from config: {settings.gitlab_token}")
+
 
 #Decoraters to include the routers for webhooks and metrics
 app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
@@ -16,7 +16,7 @@ app.include_router(metrics.router, prefix="/metrics", tags=["metrics"])
 
 @app.get("/")
 def read_root():
-    return {"i am up": "& running successfully.!! ASFAND says hi tosdsad."}
+    return {"i am up": "& running successfully.!!  says hi tosdsad."}
 
 @app.get("/stats")
 def health_check():

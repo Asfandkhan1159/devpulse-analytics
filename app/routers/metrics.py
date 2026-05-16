@@ -21,7 +21,10 @@ def check_project_exists(project_id: int, db: Session):
     return project
 
 
-
+@router.get("/projects")
+def get_projects(db:Session = Depends(get_db)):
+    projects = db.execute(select(Project)).scalars().all()
+    return [{"id":p.id, "name":p.name,"web_url":p.web_url}for p in projects]
 @router.get("/deployment-frequency", response_model=DeploymentFrequencyResponse)
 def calculate_metrics(project_id: int, days: int = 30, db: Session = Depends(get_db)):
     check_project = check_project_exists(project_id, db)

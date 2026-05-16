@@ -24,7 +24,17 @@ async def gitlab_webhook(x_gitlab_token:str = Header(...), x_gitlab_event:str = 
         return {"message": f"Event '{x_gitlab_event}' is not allowed. Ignoring."}
 
     # 4. process the payload
-    event = save_event(payload, db)
+    event = save_event(payload, db,provider='gitlab')
     db.commit()  # Commit the transaction to save the event in the database
     print("Received GitLab webhook with payload:", payload)
     return {"message": "Webhook received successfully"}
+
+@router.post("/github")
+async def github_webhook(x_hub_signature_256:str=Header(None),x_github_event:str =Header(...),payload:Any =Body(...),db:Session=Depends(get_db)):
+    allowed_github_events=["push","workflow_run","pull_request"]
+    if x_github_event not in allowed_github_events:
+        return{"message":f"Event '{x_github_event}' is not allowed.Ignoring"}
+    
+    event = save_event(payload,db,provider='github')
+    db.commit()
+    return {"message":"Github webhook received successfully"}

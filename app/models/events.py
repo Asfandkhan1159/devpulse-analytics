@@ -9,6 +9,7 @@ class Event(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("project_table.id"))
+    provider = Column(String,index=True)
     event_type = Column(String, index=True)
     timestamp = Column(DateTime)
     status = Column(String, index=True)
@@ -21,6 +22,7 @@ class Event(Base):
 class Project(Base):
     __tablename__ = "project_table"
     id= Column(Integer, primary_key=True, index=True)
-    gitlab_project_id= Column(Integer, index=True)
+    external_id= Column(String, index=True)
+    provider = Column(String, index=True)
     name= Column(String, index=True)
     web_url= Column(String, index=True)        

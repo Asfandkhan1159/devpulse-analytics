@@ -6,7 +6,7 @@ from app.models.events import Event, Project
 
 
 
-def save_event(payload: dict, db: Session) -> Event:
+def save_event(payload: dict, db: Session, provider:str) -> Event:
     # 1. extract project data from payload
     project_id = payload.get("project", {}).get("id")
     project_name = payload.get("project", {}).get("name")
@@ -16,9 +16,9 @@ def save_event(payload: dict, db: Session) -> Event:
     finished_at = payload.get("object_attributes", {}).get("finished_at")
     created_at = payload.get("object_attributes", {}).get("created_at")
     # 2. get or create project in DB
-    project = db.execute(select(Project).filter_by(gitlab_project_id=project_id)).scalar_one_or_none()
+    project = db.execute(select(Project).filter_by(external_id=project_id,provider=provider)).scalar_one_or_none()
     if not project:
-        project = Project(gitlab_project_id=project_id, name=project_name, web_url=payload.get("project", {}).get("web_url"))
+        project = Project(external_id=project_id, name=project_name, web_url=payload.get("project", {}).get("web_url"),provider=provider)
         db.add(project)
         db.flush()  # To get the project.id for the foreign key
 
@@ -29,7 +29,8 @@ def save_event(payload: dict, db: Session) -> Event:
         timestamp=timestamp,
         status=status,
         finished_at=finished_at,
-        created_at=created_at
+        created_at=created_at,
+        provider=provider
     )
     # 4. create and save event
     db.add(event)

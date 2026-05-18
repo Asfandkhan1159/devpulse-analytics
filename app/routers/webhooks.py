@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.services.webhook_service import save_event
 from app.db.database import get_db
-
+from app.services.normalizers.factory import normalize_event
 
 router = APIRouter()
 
@@ -24,7 +24,8 @@ async def gitlab_webhook(x_gitlab_token:str = Header(...), x_gitlab_event:str = 
         return {"message": f"Event '{x_gitlab_event}' is not allowed. Ignoring."}
 
     # 4. process the payload
-    event = save_event(payload, db,provider='gitlab')
+    normalized= normalize_event(provider='gitlab', payload=payload)
+    event = save_event(normalized, db,provider='gitlab')
     db.commit()  # Commit the transaction to save the event in the database
     print("Received GitLab webhook with payload:", payload)
     return {"message": "Webhook received successfully"}
@@ -34,7 +35,7 @@ async def github_webhook(x_hub_signature_256:str=Header(None),x_github_event:str
     allowed_github_events=["push","workflow_run","pull_request"]
     if x_github_event not in allowed_github_events:
         return{"message":f"Event '{x_github_event}' is not allowed.Ignoring"}
-    
-    event = save_event(payload,db,provider='github')
+    normalized = normalize_event(provider='github', payload=payload, event=x_github_event)
+    event = save_event(normalized,db,provider='github')
     db.commit()
     return {"message":"Github webhook received successfully"}

@@ -15,7 +15,9 @@ class Event(Base):
     status = Column(String, index=True)
     finished_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime)
-
+    actor=Column(String,nullable=True)
+    branch=Column(String, nullable=True)
+    commit_count = Column(String, nullable=True)
 
 
 

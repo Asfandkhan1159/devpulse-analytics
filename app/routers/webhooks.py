@@ -32,7 +32,8 @@ async def gitlab_webhook(x_gitlab_token:str = Header(...), x_gitlab_event:str = 
 
 @router.post("/github")
 async def github_webhook(x_hub_signature_256:str=Header(None),x_github_event:str =Header(...),payload:Any =Body(...),db:Session=Depends(get_db)):
-    allowed_github_events=["push","workflow_run","pull_request"]
+    print(f"GitHub event received: {x_github_event}")
+    allowed_github_events = ["workflow_run", "pull_request", "push"]
     if x_github_event not in allowed_github_events:
         return{"message":f"Event '{x_github_event}' is not allowed.Ignoring"}
     normalized = normalize_event(provider='github', payload=payload, event=x_github_event)

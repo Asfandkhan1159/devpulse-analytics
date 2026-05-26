@@ -32,7 +32,10 @@ def save_event(data: dict, db: Session, provider: str) -> Event:
         status=data["status"],
         created_at=data["created_at"],
         finished_at=data["finished_at"],
-        provider=provider
+        provider=provider,
+        actor=data.get("actor"),
+        branch=data.get("branch"),
+        commit_count=data.get("commit_count"),
     )
 
     db.add(event)

@@ -10,7 +10,12 @@ from app.db.database import get_db
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.events import Project
-
+from app.services.metrics_services import (
+    calculate_cutoff, calculate_deployment_frequency, calculate_lead_time,
+    calculate_change_failure_rate, calculate_mttr,
+    calculate_daily_deployments, calculate_daily_lead_time,
+    calculate_daily_change_failure_rate, calculate_daily_mttr
+)
 router = APIRouter()
 
 #helper function to check if project exists
@@ -24,7 +29,7 @@ def check_project_exists(project_id: int, db: Session):
 @router.get("/projects")
 def get_projects(db:Session = Depends(get_db)):
     projects = db.execute(select(Project)).scalars().all()
-    return [{"id":p.id, "name":p.name,"web_url":p.web_url}for p in projects]
+    return [{"id":p.id, "name":p.name,"web_url":p.web_url, "provider": p.provider}for p in projects]
 @router.get("/deployment-frequency", response_model=DeploymentFrequencyResponse)
 def calculate_metrics(project_id: int, days: int = 30, db: Session = Depends(get_db)):
     check_project = check_project_exists(project_id, db)
@@ -90,3 +95,13 @@ def get_mean_time_to_recovery(project_id: int, days: int = 30, db: Session = Dep
         avg_mttr=metrics["avg_mttr"]
     )
 
+@router.get("/trends")
+def get_trends(project_id:int, days:int = 30, db:Session =Depends(get_db)):
+    check_project_exists(project_id, db)
+    cutoff = calculate_cutoff(days)
+    return {
+        "deployment_frequency": calculate_daily_deployments(project_id, cutoff, db),
+        "lead_time": calculate_daily_lead_time(project_id, cutoff, db),
+        "change_failure_rate": calculate_daily_change_failure_rate(project_id, cutoff, db),
+        "mttr": calculate_daily_mttr(project_id, cutoff, db),
+    }

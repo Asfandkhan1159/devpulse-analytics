@@ -2,6 +2,7 @@
 def normalize_gitlab_event(payload:dict):
     object_attributes = payload.get("object_attributes",{})
     project=payload.get("project",{})
+    user = payload.get("user",{})
 
     return{
         "external_id":str(project.get("id")),
@@ -10,5 +11,8 @@ def normalize_gitlab_event(payload:dict):
         "event_type":payload.get("object_kind"),
         "status":object_attributes.get("status"),
         "created_at":object_attributes.get("created_at"),
-        "finished_at":object_attributes.get("finished_at")
+        "finished_at":object_attributes.get("finished_at"),
+        "actor":user.get("name"),
+        "branch":object_attributes.get("ref"),
+        "commit_count":None
     }

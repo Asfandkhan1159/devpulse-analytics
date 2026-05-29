@@ -16,6 +16,14 @@ from app.services.metrics_services import (
     calculate_daily_deployments, calculate_daily_lead_time,
     calculate_daily_change_failure_rate, calculate_daily_mttr
 )
+from pydantic import BaseModel
+
+class ProjectRegisterRequest(BaseModel):
+    external_id: str
+    name: str
+    web_url: str
+    provider: str
+    
 router = APIRouter()
 
 #helper function to check if project exists
@@ -29,7 +37,7 @@ def check_project_exists(project_id: int, db: Session):
 @router.get("/projects")
 def get_projects(db:Session = Depends(get_db)):
     projects = db.execute(select(Project)).scalars().all()
-    return [{"id":p.id, "name":p.name,"web_url":p.web_url, "provider": p.provider}for p in projects]
+    return [{"id":p.id,"external_id":p.external_id ,"name":p.name,"web_url":p.web_url, "provider": p.provider}for p in projects]
 @router.get("/deployment-frequency", response_model=DeploymentFrequencyResponse)
 def calculate_metrics(project_id: int, days: int = 30, db: Session = Depends(get_db)):
     check_project = check_project_exists(project_id, db)
@@ -47,7 +55,24 @@ def calculate_metrics(project_id: int, days: int = 30, db: Session = Depends(get
         daily_average=metrics["daily_average"],
         frequency_label=metrics["frequency_label"]
     )
+@router.post("/projects")
+def register_project(payload: ProjectRegisterRequest, db: Session = Depends(get_db)):
+    project = db.execute(select(Project).where(
+        Project.external_id == payload.external_id,
+        Project.provider == payload.provider
+    )).scalar_one_or_none()
 
+    if not project:
+        project = Project(
+            external_id=payload.external_id,
+            name=payload.name,
+            web_url=payload.web_url,
+            provider=payload.provider
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+    return {"id": project.id, "name": project.name} 
 @router.get("/lead-time", response_model=LeadTimeResponse)
 def get_lead_time(project_id: int,days: int = 30 ,db: Session = Depends(get_db)):
     check_project = check_project_exists(project_id, db)

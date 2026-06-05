@@ -27,4 +27,17 @@ class Project(Base):
     external_id= Column(String, index=True)
     provider = Column(String, index=True)
     name= Column(String, index=True)
-    web_url= Column(String, index=True)        
+    web_url= Column(String, index=True)    
+
+class SyncJob(Base):
+    __tablename__="sync_jobs"
+    id = Column(Integer,primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("project_table.id"))
+    provider=Column(String,index=True)
+    status=Column(String,index=True)
+    processed_items=Column(Integer,nullable=True)
+    total_items=Column(Integer,nullable=True)  
+    progress = Column(Integer,index=True,nullable=True)
+    error_message=Column(String,nullable=True)
+    created_at=Column(DateTime)
+    completed_at=Column(DateTime,nullable=True)

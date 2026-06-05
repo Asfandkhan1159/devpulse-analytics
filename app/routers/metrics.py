@@ -1,7 +1,7 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body,BackgroundTasks
 
 
 from app.schemas.metrics import ChangeFailureRateResponse, DeploymentFrequencyResponse, LeadTimeResponse, MeanTimeToRecoveryResponse 
@@ -10,6 +10,7 @@ from app.db.database import get_db
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.events import Project
+from app.services.sync_job_service import create_sync_job, fetch_historical_data,get_job_status
 from app.services.metrics_services import (
     calculate_cutoff, calculate_deployment_frequency, calculate_lead_time,
     calculate_change_failure_rate, calculate_mttr,
@@ -23,6 +24,15 @@ class ProjectRegisterRequest(BaseModel):
     name: str
     web_url: str
     provider: str
+
+class BackFillRequest(BaseModel):
+    project_id:int
+    repo_name:str
+    owner:str
+    provider:str
+    access_token:str
+
+
     
 router = APIRouter()
 
@@ -130,3 +140,26 @@ def get_trends(project_id:int, days:int = 30, db:Session =Depends(get_db)):
         "change_failure_rate": calculate_daily_change_failure_rate(project_id, cutoff, db),
         "mttr": calculate_daily_mttr(project_id, cutoff, db),
     }
+
+@router.post("/events/backfill")
+async def registerBackfill(payload:BackFillRequest,background_tasks:BackgroundTasks ,db:Session=Depends(get_db)):
+    job = create_sync_job(payload.project_id,payload.provider,"pending", db)
+    background_tasks.add_task(fetch_historical_data,job.id,payload.project_id,payload.owner,payload.repo_name,payload.provider, payload.access_token)
+    return {"sync_job_id":job.id} 
+
+@router.get("/sync-status/{sync_job_id}")
+async def check_sync_status(sync_job_id: int, db: Session = Depends(get_db)):
+    status = get_job_status(sync_job_id, db)
+
+    if not  status:
+        raise HTTPException(status_code=404, detail="Sync job not found")
+
+
+    return {
+    "sync_job_id": status.id,
+    "status": status.status,
+    "progress": status.progress,
+    "processed_items": status.processed_items,
+    "total_items": status.total_items,
+    "error_message": status.error_message
+}

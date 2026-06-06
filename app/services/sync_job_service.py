@@ -37,6 +37,7 @@ def get_job_status(sync_job_id: int,db:Session):
    return status
 
 async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:str,cutoff:datetime) -> dict:
+    
     headers={
         "Authorization":f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -51,6 +52,44 @@ async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:s
 
     response.raise_for_status()
     return response.json()
+
+async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, token:str, cutoff:datetime) ->dict:
+    headers={
+        "Authorization":f"Bearer {token}",
+        "Accept":"application/vnd.github+json",
+        "X-Github-APi-Version":"2022-11-28"
+    }
+    pull_requests = []
+    page = 1
+
+    while True:
+        response = await client.get(
+            f"{base_Url_github}/repos/{owner}/{repo}/pulls",
+            headers=headers,
+            params={
+                "state":"all",
+                "per_page":100,
+                "page":page,
+                "sort":"updated",
+                "direction":"desc"
+            }
+        )
+        response.raise_for_status()
+        data= response.json()
+
+        if not data:
+            break
+        for pr in data:
+            pr_updated_at = datetime.strptime(pr["updated_at"],"%Y-%m-%dT%H:%M:%SZ")
+            if pr_updated_at >= cutoff:
+                pull_requests.append(pr)
+            else:
+                return pull_requests
+        if len(data) < 100:
+            break
+        page +=1
+    return pull_requests            
+
 
 async def fetch_historical_data(sync_job_id: int,
     project_id: int,

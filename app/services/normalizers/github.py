@@ -1,6 +1,6 @@
 
 def normalize_github_event(payload:dict,event:str)-> dict:
-    repository = payload.get("repository",{})
+    repository = payload.get("repository") or payload.get("base", {}).get("repo", {})
     if event == "workflow_run":
         workflow = payload.get("workflow_run") or payload
         sender = payload.get("sender") or {}
@@ -17,13 +17,13 @@ def normalize_github_event(payload:dict,event:str)-> dict:
             "commit_count":None
         }
     elif event == "pull_request":
-        pr = payload.get("pull_request",{})
+        pr = payload.get("pull_request",{}) or payload
         return{
             "external_id":str(repository.get("id")),
             "project_name":str(repository.get("name")),
             "web_url":repository.get("html_url"),
             "event_type":"merge_request",
-            "status": "success" if pr.get("merged") else pr.get("state"),
+            "status": "success" if pr.get("merged") or pr.get("merged_at") else pr.get("state"),
             "created_at":pr.get("created_at"),
             "finished_at":pr.get("merged_at"),
             "actor":pr.get("user",{}).get("login"),

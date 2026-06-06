@@ -2,8 +2,8 @@
 def normalize_github_event(payload:dict,event:str)-> dict:
     repository = payload.get("repository",{})
     if event == "workflow_run":
-        workflow = payload.get("workflow_run",{})
-        sender = payload.get("sender",{})
+        workflow = payload.get("workflow_run") or payload
+        sender = payload.get("sender") or {}
         return{
             "external_id":str(repository.get("id")),
             "project_name":repository.get("name"),

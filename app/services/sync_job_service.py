@@ -72,6 +72,8 @@ async def fetch_historical_data(sync_job_id: int,
         start_job.total_items = len(runs)
         db.commit()
         for i, run in enumerate(runs):
+            if run.get("conclusion") is None:
+                continue  # skip incomplete runs
             normalized_github_data=normalize_event(provider=provider, payload=run, event='workflow_run')
             save_event(data=normalized_github_data, db=db, provider=provider)
             start_job.processed_items= i + 1

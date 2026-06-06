@@ -1,6 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-from datetime import datetime
+from datetime import datetime, timezone
 from app.db.database import SessionLocal
 import httpx
 from app.models.events import SyncJob
@@ -80,7 +80,7 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
         if not data:
             break
         for pr in data:
-            pr_updated_at = datetime.strptime(pr["updated_at"],"%Y-%m-%dT%H:%M:%SZ")
+            pr_updated_at = datetime.strptime(pr["updated_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
             if pr_updated_at >= cutoff:
                 pull_requests.append(pr)
             else:

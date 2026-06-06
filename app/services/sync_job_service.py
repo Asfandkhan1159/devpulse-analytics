@@ -91,57 +91,70 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
     return pull_requests            
 
 
-async def fetch_historical_data(sync_job_id: int,
+async def fetch_historical_data(
+    sync_job_id: int,
     project_id: int,
     owner: str,
     repo_name: str,
     provider: str,
     access_token: str,
-   ):
+):
     try:
         db = SessionLocal()
-        start_job= get_job_status(sync_job_id,db)
-
+        start_job = get_job_status(sync_job_id, db)
         start_job.status = "in_progress"
+        db.commit()
         
         cutoff = calculate_cutoff(90)
-        async with httpx.AsyncClient() as client :
-            data = await call_github_api(client, owner=owner, repo = repo_name, token = access_token, cutoff=cutoff)
-            prs_data = await call_github_prs_api(client,owner=owner,repo=repo_name,token = access_token, cutoff=cutoff)
-        runs = data ["workflow_runs"]
-        start_job.total_items = len(runs) + len(prs_data)
-        db.commit()
-        for i, run in enumerate(runs):
-            if not run.get("conclusion"):
-                continue
-            normalized_github_data=normalize_event(provider=provider, payload=run, event='workflow_run')
-            save_event(data=normalized_github_data, db=db, provider=provider)
-            start_job.processed_items= i + 1
-            start_job.progress = int(((i + 1)/start_job.total_items)*100)
-            db.commit()
+        async with httpx.AsyncClient() as client:
+            data = await call_github_api(client, owner=owner, repo=repo_name, token=access_token, cutoff=cutoff)
+            prs_data = await call_github_prs_api(client, owner=owner, repo=repo_name, token=access_token, cutoff=cutoff)
+        
+        runs = data.get("workflow_runs", [])
+        
+        # 1. Filter and build a definitive queue of valid targets
+        items_to_process = []
+        
+        for run in runs:
+            if run.get("conclusion"):  # Only queue completed runs
+                items_to_process.append((run, 'workflow_run'))
+                
         for pr in prs_data:
-            if not pr.get("merged_at"):  # skip unmerged PRs
-                continue
-            normalized_pr = normalize_event(provider=provider, payload=pr, event='pull_request')
-            save_event(data=normalized_pr, db=db, provider=provider)
-            start_job.processed_items = (start_job.processed_items or 0) + 1
-            start_job.progress = int((start_job.processed_items / start_job.total_items) * 100)
-            db.commit()    
+            # Note: Removing the 'merged_at' skip lets you log open/closed PRs.
+            # If you ONLY want merged PRs, keep this filter active.
+            if pr.get("merged_at"): 
+                items_to_process.append((pr, 'pull_request'))
+            
+        # 2. Assign the true total count of items that will actually run
+        start_job.total_items = len(items_to_process)
+        db.commit()
+        
+        # 3. Guard against an empty database sync window
+        if start_job.total_items == 0:
+            start_job.progress = 100
+        else:
+            # 4. Process everything sequentially with a reliable counter
+            for index, (payload, event_type) in enumerate(items_to_process):
+                normalized_data = normalize_event(provider=provider, payload=payload, event=event_type)
+                save_event(data=normalized_data, db=db, provider=provider)
+                
+                # Smooth sequential updates
+                processed_count = index + 1
+                start_job.processed_items = processed_count
+                start_job.progress = int((processed_count / start_job.total_items) * 100)
+                db.commit()
+                
         start_job.status = "completed"
         start_job.completed_at = datetime.utcnow()
         db.commit()
 
-       
-                    
-
-
     except Exception as e:
-        start_job.status = "failed"
-        start_job.error_message = str(e)
-        db.commit()
-
+        if 'start_job' in locals() and start_job:
+            start_job.status = "failed"
+            start_job.error_message = str(e)
+            db.commit()
         
     finally:
         db.close()
-   
+
     

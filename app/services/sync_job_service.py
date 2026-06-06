@@ -107,8 +107,9 @@ async def fetch_historical_data(sync_job_id: int,
         cutoff = calculate_cutoff(90)
         async with httpx.AsyncClient() as client :
             data = await call_github_api(client, owner=owner, repo = repo_name, token = access_token, cutoff=cutoff)
+            prs_data = await call_github_prs_api(client,owner=owner,repo=repo_name,token = access_token, cutoff=cutoff)
         runs = data ["workflow_runs"]
-        start_job.total_items = len(runs)
+        start_job.total_items = len(runs) + len(prs_data)
         db.commit()
         for i, run in enumerate(runs):
             if not run.get("conclusion"):
@@ -118,9 +119,20 @@ async def fetch_historical_data(sync_job_id: int,
             start_job.processed_items= i + 1
             start_job.progress = int(((i + 1)/start_job.total_items)*100)
             db.commit()
+        for pr in prs_data:
+            if not pr.get("merged_at"):  # skip unmerged PRs
+                continue
+            normalized_pr = normalize_event(provider=provider, payload=pr, event='pull_request')
+            save_event(data=normalized_pr, db=db, provider=provider)
+            start_job.processed_items = (start_job.processed_items or 0) + 1
+            start_job.progress = int((start_job.processed_items / start_job.total_items) * 100)
+            db.commit()    
         start_job.status = "completed"
         start_job.completed_at = datetime.utcnow()
-        db.commit()        
+        db.commit()
+
+       
+                    
 
 
     except Exception as e:

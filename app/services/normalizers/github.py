@@ -11,7 +11,7 @@ def normalize_github_event(payload:dict,event:str)-> dict:
             "event_type":"pipeline",
             "status":workflow.get("conclusion"),
             "created_at":workflow.get("created_at"),
-            "finished_at":workflow.get("finished_at"),
+            "finished_at":workflow.get("updated_at"),
             "actor":sender.get("login"),
             "branch":workflow.get("head_branch"),
             "commit_count":None

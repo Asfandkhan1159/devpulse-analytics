@@ -26,7 +26,7 @@ def base_pipeline_query(project_id:int, cutoff: datetime):
     ))    
 
 def calculate_cutoff(days:int):
-    return datetime.now(timezone.utc) - timedelta(days=days)
+    return datetime.now() - timedelta(days=days)
 
 def calculate_daily_deployments(project_id:int,cutoff:datetime,db:Session):
     date_label= func.date(Event.timestamp).label("deployment_day")

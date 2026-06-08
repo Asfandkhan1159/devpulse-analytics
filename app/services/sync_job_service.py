@@ -116,8 +116,9 @@ async def fetch_historical_data(
         items_to_process = []
         
         for run in runs:
-            if run.get("conclusion"):  # Only queue completed runs
-                items_to_process.append((run, 'workflow_run'))
+            if run.get("conclusion") is None:
+                continue
+            items_to_process.append((run, 'workflow_run'))
                 
         for pr in prs_data:
             # Note: Removing the 'merged_at' skip lets you log open/closed PRs.

@@ -144,7 +144,7 @@ def calculate_change_failure_rate(project_id:int, db:Session, cutoff: datetime):
     query = base_pipeline_query(project_id, cutoff)
     total_deployments_result = select(func.count()).select_from(query.subquery())
     total_deployments = db.execute(total_deployments_result).scalar()
-    failed_deployments_result = select(func.count(Event.id)).where(and_(Event.project_id == project_id, Event.event_type == "pipeline", Event.status == "failed", Event.timestamp >= cutoff))
+    failed_deployments_result = select(func.count(Event.id)).where(and_(Event.project_id == project_id, Event.event_type == "pipeline", Event.status == "failure", Event.timestamp >= cutoff))
     failed_deployments = db.execute(failed_deployments_result).scalar()
     failure_rate_percentage = (failed_deployments / total_deployments) * 100 if total_deployments > 0 else 0
 

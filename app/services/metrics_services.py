@@ -71,7 +71,7 @@ def calculate_daily_lead_time(project_id: int, cutoff: datetime, db: Session):
 def calculate_daily_change_failure_rate(project_id:int, cutoff:datetime, db:Session):
     date_label = func.date(Event.timestamp).label("daily_cfr")
     
-    failed_count = func.count().filter(Event.status == "failed").label("failed_deployments")
+    failed_count = func.count().filter(Event.status == "failure").label("failed_deployments")
     query = select(
         date_label, (failed_count * 100 / func.count()).label("cfr")
     ).where(and_(
@@ -86,7 +86,7 @@ def calculate_daily_mttr(project_id: int, cutoff: datetime, db: Session):
     
     failed_event_result = select(Event).where(and_(Event.project_id == project_id,
                                                    Event.event_type == "pipeline",
-                                                   Event.status == "failed",
+                                                   Event.status == "failure",
                                                    Event.timestamp >=  cutoff)).order_by(Event.timestamp)
     failed_event = db.execute(failed_event_result).scalars().all()
     recovery_times = {}
@@ -95,11 +95,12 @@ def calculate_daily_mttr(project_id: int, cutoff: datetime, db: Session):
             Event.project_id ==project_id,
             Event.event_type == "pipeline",
             Event.status == "success",
-            Event.created_at > event.finished_at
+            Event.created_at > event.created_at
         )).order_by(Event.created_at).limit(1)).scalar_one_or_none()
         day = event.timestamp.date()
         if recovery:
-            diff = (recovery.created_at - event.finished_at).total_seconds()/3600
+            event_end = event.finished_at or event.created_at
+            diff = (recovery.created_at - event_end).total_seconds()/3600
             if day not in recovery_times:
                 recovery_times[day]=[]
             recovery_times[day].append(diff)
@@ -169,7 +170,8 @@ def calculate_mttr(project_id: int, db: Session, cutoff: datetime):
         if recovery:
             print("event", event.created_at, event.finished_at)           
             print("recovery", recovery.created_at, recovery.finished_at)
-            diff = (recovery.created_at - event.finished_at).total_seconds() / 3600  # Convert to hours
+            event_end = event.finished_at or event.created_at
+            diff = (recovery.created_at - event_end).total_seconds() / 3600
             recovery_times.append(diff)
     # calculate average time difference
     avg_mttr = sum(recovery_times) / len(recovery_times) if recovery_times else 0

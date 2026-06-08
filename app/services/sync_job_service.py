@@ -80,7 +80,7 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
         if not data:
             break
         for pr in data:
-            pr_updated_at = datetime.strptime(pr["updated_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            pr_updated_at = datetime.strptime(pr["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
             if pr_updated_at >= cutoff:
                 pull_requests.append(pr)
             else:

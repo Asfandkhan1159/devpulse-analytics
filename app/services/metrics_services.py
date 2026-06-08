@@ -95,7 +95,7 @@ def calculate_daily_mttr(project_id: int, cutoff: datetime, db: Session):
             Event.project_id ==project_id,
             Event.event_type == "pipeline",
             Event.status == "success",
-            Event.created_at > event.created_at
+            Event.created_at > event.finished_at
         )).order_by(Event.created_at).limit(1)).scalar_one_or_none()
         day = event.timestamp.date()
         if recovery:
@@ -165,7 +165,7 @@ def calculate_mttr(project_id: int, db: Session, cutoff: datetime):
             Event.project_id == project_id,
             Event.event_type == "pipeline",
             Event.status == "success",
-            Event.created_at > event.created_at
+            Event.created_at > event.finished_at
         )).order_by(Event.created_at).limit(1)).scalar_one_or_none() 
         if recovery:
             print("event", event.created_at, event.finished_at)           

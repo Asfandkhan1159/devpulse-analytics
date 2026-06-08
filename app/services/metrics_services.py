@@ -155,7 +155,7 @@ def calculate_change_failure_rate(project_id:int, db:Session, cutoff: datetime):
 
 def calculate_mttr(project_id: int, db: Session, cutoff: datetime):
     # find all failed events
-    failed_event_result = select(Event).where(and_(Event.project_id == project_id, Event.event_type == "pipeline", Event.status == "failed", Event.timestamp >= cutoff)).order_by(Event.timestamp)
+    failed_event_result = select(Event).where(and_(Event.project_id == project_id, Event.event_type == "pipeline", Event.status == "failure", Event.timestamp >= cutoff)).order_by(Event.timestamp)
     failed_event = db.execute(failed_event_result).scalars().all()
     # for each failure, find the next success after it
     recovery_times = []
@@ -164,7 +164,7 @@ def calculate_mttr(project_id: int, db: Session, cutoff: datetime):
             Event.project_id == project_id,
             Event.event_type == "pipeline",
             Event.status == "success",
-            Event.created_at > event.finished_at
+            Event.created_at > event.created_at
         )).order_by(Event.created_at).limit(1)).scalar_one_or_none() 
         if recovery:
             print("event", event.created_at, event.finished_at)           

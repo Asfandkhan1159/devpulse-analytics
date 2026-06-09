@@ -1,7 +1,7 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import select,and_, func
-from app.models.events import Event, Project
+from app.models.events import Event
 
 
 def calculate_frequency_label(daily_average) -> str:
@@ -84,22 +84,23 @@ def calculate_daily_change_failure_rate(project_id:int, cutoff:datetime, db:Sess
 
 def calculate_daily_mttr(project_id: int, cutoff: datetime, db: Session):
     
-    failed_event_result = select(Event).where(and_(Event.project_id == project_id,
+    failed_event = db.execute(select(Event).where(and_(Event.project_id == project_id,
                                                    Event.event_type == "pipeline",
                                                    Event.status == "failure",
-                                                   Event.timestamp >=  cutoff)).order_by(Event.timestamp)
-    failed_event = db.execute(failed_event_result).scalars().all()
+                                                   Event.timestamp >=  cutoff)).order_by(Event.timestamp)).scalars().all()
+    
+    success_event = db.execute(select(Event).where(and_(Event.project_id == project_id,
+                                                   Event.event_type == "pipeline",
+                                                   Event.status == "success",
+                                                   Event.timestamp >=  cutoff)).order_by(Event.created_at)).scalars().all()
+    
     recovery_times = {}
     for event in failed_event:
-        recovery= db.execute(select(Event).where(and_(
-            Event.project_id ==project_id,
-            Event.event_type == "pipeline",
-            Event.status == "success",
-            Event.created_at > event.finished_at
-        )).order_by(Event.created_at).limit(1)).scalar_one_or_none()
+        event_end = event.finished_at or event.created_at
+        recovery= next((s for s in success_event if s.created_at > event_end),None)
         day = event.timestamp.date()
         if recovery:
-            event_end = event.finished_at or event.created_at
+            
             diff = (recovery.created_at - event_end).total_seconds()/3600
             if day not in recovery_times:
                 recovery_times[day]=[]
@@ -107,7 +108,7 @@ def calculate_daily_mttr(project_id: int, cutoff: datetime, db: Session):
     return[{"date":str(day), "value":sum(times)/len(times)}
            for day,
             times in recovery_times.items()
-           ]            
+           ]          
             
             
 
@@ -155,27 +156,34 @@ def calculate_change_failure_rate(project_id:int, db:Session, cutoff: datetime):
 
 
 def calculate_mttr(project_id: int, db: Session, cutoff: datetime):
-    # find all failed events
-    failed_event_result = select(Event).where(and_(Event.project_id == project_id, Event.event_type == "pipeline", Event.status == "failure", Event.timestamp >= cutoff)).order_by(Event.timestamp)
-    failed_event = db.execute(failed_event_result).scalars().all()
-    # for each failure, find the next success after it
-    recovery_times = []
-    for event in failed_event:
-        recovery = db.execute(select(Event).where(and_(
+    failed_events = db.execute(
+        select(Event).where(and_(
+            Event.project_id == project_id,
+            Event.event_type == "pipeline",
+            Event.status == "failure",
+            Event.timestamp >= cutoff
+        )).order_by(Event.timestamp)
+    ).scalars().all()
+
+    success_events = db.execute(
+        select(Event).where(and_(
             Event.project_id == project_id,
             Event.event_type == "pipeline",
             Event.status == "success",
-            Event.created_at > event.finished_at
-        )).order_by(Event.created_at).limit(1)).scalar_one_or_none() 
+            Event.timestamp >= cutoff
+        )).order_by(Event.created_at)
+    ).scalars().all()
+
+    recovery_times = []
+    for event in failed_events:
+        event_end = event.finished_at or event.created_at
+        recovery = next(
+            (s for s in success_events if s.created_at > event_end),
+            None
+        )
         if recovery:
-            print("event", event.created_at, event.finished_at)           
-            print("recovery", recovery.created_at, recovery.finished_at)
-            event_end = event.finished_at or event.created_at
             diff = (recovery.created_at - event_end).total_seconds() / 3600
             recovery_times.append(diff)
-    # calculate average time difference
-    avg_mttr = sum(recovery_times) / len(recovery_times) if recovery_times else 0
 
-    return {
-        "avg_mttr": avg_mttr
-    }
+    avg_mttr = sum(recovery_times) / len(recovery_times) if recovery_times else 0
+    return {"avg_mttr": avg_mttr}

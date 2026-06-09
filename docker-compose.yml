@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  fastapi:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      GITLAB_TOKEN: ${GITLAB_TOKEN}
+    depends_on:
+      - db
+
+  nestjs:
+    build: ../devpulse-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${GATEWAY_DB_NAME}
+      JWT_SECRET: ${JWT_SECRET}
+      FASTAPI_URL: http://fastapi:8000
+    depends_on:
+      - db
+      - fastapi
+
+volumes:
+  postgres_data:

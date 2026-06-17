@@ -13,7 +13,8 @@ router = APIRouter()
 settings = Settings()
 
 # 2. get the secret from config
-secret_token = settings.gitlab_token
+secret_token = settings.GITLAB_TOKEN
+print(f"")
 # 3. compare incoming token to secret
 allowed_events = ["Push Hook", "Pipeline Hook", "Deployment Hook", "Merge Request Hook"]  # Example allowed events
 @router.post("/gitlab")

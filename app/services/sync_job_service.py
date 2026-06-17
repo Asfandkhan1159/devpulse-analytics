@@ -9,6 +9,7 @@ from app.services.metrics_services import calculate_cutoff
 from app.services.normalizers.factory import normalize_event
 from app.services.webhook_service import save_event
 base_Url_github ="https://api.github.com" 
+base_Url_gitlab="https://gitlab.com/api/v4"
 
 settings= Settings()
 
@@ -53,6 +54,21 @@ async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:s
     response.raise_for_status()
     return response.json()
 
+async def call_gitlab_pipelines_api(client: httpx.AsyncClient, gitlab_project_id: str, token: str, cutoff: datetime) -> list:
+    headers = {
+        "PRIVATE-TOKEN": token,
+    }
+    response = await client.get(
+        f"{base_Url_gitlab}/projects/{gitlab_project_id}/pipelines",
+        headers=headers,
+        params={
+            "per_page": 100,
+            "updated_after": cutoff.strftime('%Y-%m-%dT%H:%M:%SZ')
+        }
+    )
+    response.raise_for_status()
+    return response.json()
+
 async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, token:str, cutoff:datetime) ->dict:
     headers={
         "Authorization":f"Bearer {token}",
@@ -88,63 +104,125 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
         if len(data) < 100:
             break
         page +=1
-    return pull_requests            
+    return pull_requests          
+
+async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,cutoff):  
+    headers = {
+        "PRIVATE-TOKEN": token,
+    }
+    merge_requests = []
+    page = 1
+    while True:
+        response = await client.get(
+        f"{base_Url_gitlab}/projects/{gitlab_project_id}/merge_requests",
+        headers=headers,
+        params={
+            "state":"merged",
+            "per_page": 100,
+            "updated_after": cutoff.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "page":page
+        }
+    )
+        response.raise_for_status()
+        data = response.json()
+
+        if not data:
+            break
+        for mr in data:
+            mr_updated_at = datetime.strptime(mr["updated_at"],"%Y-%m-%dT%H:%M:%SZ")
+            if mr_updated_at >= cutoff:
+                merge_requests.append(mr)
+            else:
+                return merge_requests
+        if len(data) < 100:
+            break
+        page +=1
+    return merge_requests            
+
 
 
 async def fetch_historical_data(
     sync_job_id: int,
     project_id: int,
-    owner: str,
-    repo_name: str,
-    provider: str,
+    owner: str,           # For GitHub: org/user, For GitLab: group or ignore if using project_id
+    repo_name: str,       # For GitHub: repo name, For GitLab: project path or ID as string
+    provider: str,        # "github" or "gitlab"
     access_token: str,
+    gitlab_project_id: str = None,  # Required for GitLab
 ):
+
     try:
         db = SessionLocal()
         start_job = get_job_status(sync_job_id, db)
+        if not start_job:
+            raise ValueError("SyncJob not found")
+
         start_job.status = "in_progress"
         db.commit()
-        
+
         cutoff = calculate_cutoff(90)
+
         async with httpx.AsyncClient() as client:
-            data = await call_github_api(client, owner=owner, repo=repo_name, token=access_token, cutoff=cutoff)
-            prs_data = await call_github_prs_api(client, owner=owner, repo=repo_name, token=access_token, cutoff=cutoff)
-        
-        runs = data.get("workflow_runs", [])
-        
-        # 1. Filter and build a definitive queue of valid targets
-        items_to_process = []
-        
-        for run in runs:
-            if run.get("conclusion") is None:
-                continue
-            items_to_process.append((run, 'workflow_run'))
+            if provider.lower() == "github":
+                runs_data = await call_github_api(client, owner, repo_name, access_token, cutoff)
+                prs_data = await call_github_prs_api(client, owner, repo_name, access_token, cutoff)
                 
-        for pr in prs_data:
-            # Note: Removing the 'merged_at' skip lets you log open/closed PRs.
-            # If you ONLY want merged PRs, keep this filter active.
-            if pr.get("merged_at"): 
-                items_to_process.append((pr, 'pull_request'))
-            
-        # 2. Assign the true total count of items that will actually run
+                runs = runs_data.get("workflow_runs", [])
+                items_to_process = []
+
+                for run in runs:
+                    if run.get("conclusion") is None:
+                        continue
+                    items_to_process.append((run, 'workflow_run'))
+
+                for pr in prs_data:
+                    if pr.get("merged_at"):   # Only merged PRs? Or remove this if you want all
+                        items_to_process.append((pr, 'pull_request'))
+
+            elif provider.lower() == "gitlab":
+                if not gitlab_project_id:
+                    raise ValueError("gitlab_project_id is required for GitLab provider")
+
+                pipelines = await call_gitlab_pipelines_api(client, gitlab_project_id, access_token, cutoff)
+                mrs = await call_gitlab_mrs_api(client, gitlab_project_id, access_token, cutoff)
+
+                items_to_process = []
+
+                for pipeline in pipelines:
+                    if pipeline.get("status") in ["success", "failed"]:  # Only completed ones
+                        items_to_process.append((pipeline, 'pipeline'))
+
+                for mr in mrs:
+                    if mr.get("merged_at"):   # Adjust filter as needed
+                        items_to_process.append((mr, 'merge_request'))
+
+            else:
+                raise ValueError(f"Unsupported provider: {provider}")
+
+        # Common processing logic
         start_job.total_items = len(items_to_process)
         db.commit()
-        
-        # 3. Guard against an empty database sync window
+
         if start_job.total_items == 0:
             start_job.progress = 100
-        else:
-            # 4. Process everything sequentially with a reliable counter
-            for index, (payload, event_type) in enumerate(items_to_process):
-                normalized_data = normalize_event(provider=provider, payload=payload, event=event_type)
-                save_event(data=normalized_data, db=db, provider=provider)
-                
-                # Smooth sequential updates
-                processed_count = index + 1
-                start_job.processed_items = processed_count
-                start_job.progress = int((processed_count / start_job.total_items) * 100)
-                db.commit()
-                
+            start_job.status = "completed"
+            start_job.completed_at = datetime.utcnow()
+            db.commit()
+            return
+
+        for index, (payload, event_type) in enumerate(items_to_process):
+            normalized_data = normalize_event(
+                provider=provider, 
+                payload=payload, 
+                event=event_type
+            )
+            save_event(data=normalized_data, db=db, provider=provider)
+
+            processed_count = index + 1
+            start_job.processed_items = processed_count
+            start_job.progress = int((processed_count / start_job.total_items) * 100)
+            db.commit()
+
         start_job.status = "completed"
         start_job.completed_at = datetime.utcnow()
         db.commit()
@@ -154,8 +232,7 @@ async def fetch_historical_data(
             start_job.status = "failed"
             start_job.error_message = str(e)
             db.commit()
-        
+        raise  # Re-raise so caller can handle logging if needed
+
     finally:
         db.close()
-
-    

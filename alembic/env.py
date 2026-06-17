@@ -65,7 +65,7 @@ def run_migrations_online() -> None:
     """
 
     settings = Settings()
-    config.set_main_option("sqlalchemy.url", settings.database_url)
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
    
     

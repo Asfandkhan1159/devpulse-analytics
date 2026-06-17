@@ -31,6 +31,7 @@ class BackFillRequest(BaseModel):
     owner:str
     provider:str
     access_token:str
+    gitlab_project_id:str
 
 
     
@@ -144,7 +145,7 @@ def get_trends(project_id:int, days:int = 30, db:Session =Depends(get_db)):
 @router.post("/events/backfill")
 async def registerBackfill(payload:BackFillRequest,background_tasks:BackgroundTasks ,db:Session=Depends(get_db)):
     job = create_sync_job(payload.project_id,payload.provider,"pending", db)
-    background_tasks.add_task(fetch_historical_data,job.id,payload.project_id,payload.owner,payload.repo_name,payload.provider, payload.access_token)
+    background_tasks.add_task(fetch_historical_data,job.id,payload.project_id,payload.owner,payload.repo_name,payload.provider, payload.access_token,payload.gitlab_project_id)
     return {"sync_job_id":job.id} 
 
 @router.get("/sync-status/{sync_job_id}")

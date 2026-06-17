@@ -14,7 +14,8 @@ def normalize_github_event(payload:dict,event:str)-> dict:
             "finished_at":workflow.get("updated_at"),
             "actor":sender.get("login"),
             "branch":workflow.get("head_branch"),
-            "commit_count":None
+            "commit_count":None,
+            "external_event_id": str(workflow.get("id")),
         }
     elif event == "pull_request":
         pr = payload.get("pull_request",{}) or payload
@@ -28,7 +29,8 @@ def normalize_github_event(payload:dict,event:str)-> dict:
             "finished_at":pr.get("merged_at"),
             "actor":pr.get("user",{}).get("login"),
             "branch":pr.get("head",{}).get("ref"),
-            "commit_count":None
+            "commit_count":None,
+            "external_event_id": str(pr.get("id")),
         }
     elif event == "push":
         commits = payload.get("commits", [])
@@ -45,6 +47,7 @@ def normalize_github_event(payload:dict,event:str)-> dict:
             "finished_at":payload.get("head_commit",{}).get("timestamp"),
             "actor":payload.get("pusher",{}).get("name"),
             "branch": ref.replace("refs/heads/",""),
-            "commit_count":len(commits)
+            "commit_count":len(commits),
+            "external_event_id": payload.get("after"),
         }
     raise ValueError(f"Unsupported Github event:{event}")

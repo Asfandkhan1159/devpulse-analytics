@@ -15,7 +15,8 @@ def normalize_gitlab_event(payload: dict):
             "finished_at": object_attributes.get("finished_at"),
             "actor": user.get("name"),
             "branch": object_attributes.get("ref"),
-            "commit_count": None
+            "commit_count": None,
+            "external_event_id": str(payload.get("id")),
         }
     else:
         # Backfill API payload — pipeline or MR
@@ -31,7 +32,8 @@ def normalize_gitlab_event(payload: dict):
                 "finished_at": payload.get("merged_at"),
                 "actor": payload.get("author", {}).get("name"),
                 "branch": payload.get("source_branch"),
-                "commit_count": None
+                "commit_count": None,
+                "external_event_id": str(payload.get("id")),
             }
         else:
             # Pipeline
@@ -45,5 +47,6 @@ def normalize_gitlab_event(payload: dict):
                 "finished_at": payload.get("updated_at"),
                 "actor": None,
                 "branch": payload.get("ref"),
-                "commit_count": None
+                "commit_count": None,
+                "external_event_id": str(payload.get("id")),
             }

@@ -18,6 +18,7 @@ class Event(Base):
     actor=Column(String,nullable=True)
     branch=Column(String, nullable=True)
     commit_count = Column(String, nullable=True)
+    external_event_id = Column(String, nullable=True, index=True)
 
 
 

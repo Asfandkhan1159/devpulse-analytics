@@ -6,7 +6,6 @@ from app.models.events import Event, Project
 
 
 def save_event(data: dict, db: Session, provider: str) -> Event:
-
     project = db.execute(
         select(Project).filter_by(
             external_id=data["external_id"],
@@ -21,9 +20,21 @@ def save_event(data: dict, db: Session, provider: str) -> Event:
             web_url=data["web_url"],
             provider=provider
         )
-
         db.add(project)
         db.flush()
+
+    # Idempotency check
+    external_event_id = data.get("external_event_id")
+    if external_event_id:
+        existing = db.execute(
+            select(Event).filter_by(
+                project_id=project.id,
+                provider=provider,
+                external_event_id=external_event_id
+            )
+        ).scalar_one_or_none()
+        if existing:
+            return existing
 
     event = Event(
         project_id=project.id,
@@ -36,9 +47,9 @@ def save_event(data: dict, db: Session, provider: str) -> Event:
         actor=data.get("actor"),
         branch=data.get("branch"),
         commit_count=data.get("commit_count"),
+        external_event_id=external_event_id,
     )
 
     db.add(event)
     db.flush()
-
     return event

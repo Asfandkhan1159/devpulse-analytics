@@ -11,7 +11,14 @@ class Base(DeclarativeBase):
 
 # Remove the duplicate "settings = Settings()" lines here
 
-engine = create_engine(settings.DATABASE_URL)
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=2,          # persistent connections
+    max_overflow=3,       # temporary extra during spikes
+    pool_recycle=300,     # recycle every 5 min
+    pool_timeout=30,      # optional: wait time for connection
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

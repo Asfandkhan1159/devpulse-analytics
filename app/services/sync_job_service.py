@@ -4,14 +4,23 @@ from datetime import datetime, timezone
 from app.db.database import SessionLocal
 import httpx
 from app.models.events import SyncJob
-from app.config import Settings
+
 from app.services.metrics_services import calculate_cutoff
 from app.services.normalizers.factory import normalize_event
 from app.services.webhook_service import save_event
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 base_Url_github ="https://api.github.com" 
 base_Url_gitlab="https://gitlab.com/api/v4"
 
-settings= Settings()
+
+
+def with_retry(func):
+    return retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1, min=4, max=60),
+        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException))
+    )(func)
+
 
 def create_sync_job(project_id,provider,status,db:Session):
     syncJob =SyncJob(
@@ -37,6 +46,7 @@ def get_job_status(sync_job_id: int,db:Session):
 
    return status
 
+@with_retry
 async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:str,cutoff:datetime) -> dict:
     
     headers={
@@ -54,6 +64,7 @@ async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:s
     response.raise_for_status()
     return response.json()
 
+@with_retry
 async def call_gitlab_pipelines_api(client: httpx.AsyncClient, gitlab_project_id: str, token: str, cutoff: datetime) -> list:
     headers = {
         "PRIVATE-TOKEN": token,
@@ -69,6 +80,7 @@ async def call_gitlab_pipelines_api(client: httpx.AsyncClient, gitlab_project_id
     response.raise_for_status()
     return response.json()
 
+@with_retry
 async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, token:str, cutoff:datetime) ->dict:
     headers={
         "Authorization":f"Bearer {token}",
@@ -106,6 +118,7 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
         page +=1
     return pull_requests          
 
+@with_retry
 async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,cutoff):  
     headers = {
         "PRIVATE-TOKEN": token,
@@ -162,7 +175,7 @@ async def fetch_historical_data(
 
         cutoff = calculate_cutoff(90)
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             if provider.lower() == "github":
                 runs_data = await call_github_api(client, owner, repo_name, access_token, cutoff)
                 prs_data = await call_github_prs_api(client, owner, repo_name, access_token, cutoff)
@@ -221,7 +234,8 @@ async def fetch_historical_data(
             processed_count = index + 1
             start_job.processed_items = processed_count
             start_job.progress = int((processed_count / start_job.total_items) * 100)
-            db.commit()
+            if processed_count % 10 == 0:
+                db.commit()
 
         start_job.status = "completed"
         start_job.completed_at = datetime.utcnow()
@@ -232,7 +246,7 @@ async def fetch_historical_data(
             start_job.status = "failed"
             start_job.error_message = str(e)
             db.commit()
-        raise  # Re-raise so caller can handle logging if needed
+       
 
     finally:
         db.close()

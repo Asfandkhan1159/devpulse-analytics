@@ -66,9 +66,7 @@ async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:s
 
 @with_retry
 async def call_gitlab_pipelines_api(client: httpx.AsyncClient, gitlab_project_id: str, token: str, cutoff: datetime) -> list:
-    headers = {
-        "PRIVATE-TOKEN": token,
-    }
+    headers = {"Authorization": f"Bearer {token}"}
     response = await client.get(
         f"{base_Url_gitlab}/projects/{gitlab_project_id}/pipelines",
         headers=headers,
@@ -120,9 +118,7 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
 
 @with_retry
 async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,cutoff):  
-    headers = {
-        "PRIVATE-TOKEN": token,
-    }
+    headers = {"Authorization": f"Bearer {token}"}
     merge_requests = []
     page = 1
     while True:

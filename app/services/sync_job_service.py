@@ -245,7 +245,7 @@ async def fetch_historical_data(
         if 'start_job' in locals() and start_job:
             import traceback
             start_job.status = "failed"
-            start_job.error_message = traceback.format_exc()[:500]
+            start_job.error_message = traceback.format_exc()[:2500]
             db.commit()
        
 

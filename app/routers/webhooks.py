@@ -14,7 +14,7 @@ settings = Settings()
 
 # 2. get the secret from config
 secret_token = settings.GITLAB_TOKEN
-print(f"")
+
 # 3. compare incoming token to secret
 allowed_events = ["Push Hook", "Pipeline Hook", "Deployment Hook", "Merge Request Hook"]  # Example allowed events
 @router.post("/gitlab")
@@ -28,12 +28,12 @@ async def gitlab_webhook(x_gitlab_token:str = Header(...), x_gitlab_event:str = 
     normalized= normalize_event(provider='gitlab', payload=payload)
     event = save_event(normalized, db,provider='gitlab')
     db.commit()  # Commit the transaction to save the event in the database
-    print("Received GitLab webhook with payload:", payload)
+    
     return {"message": "Webhook received successfully"}
 
 @router.post("/github")
 async def github_webhook(x_hub_signature_256:str=Header(None),x_github_event:str =Header(...),payload:Any =Body(...),db:Session=Depends(get_db)):
-    print(f"GitHub event received: {x_github_event}")
+   
     
     allowed_github_events = ["workflow_run", "pull_request", "push"]
     if x_github_event not in allowed_github_events:

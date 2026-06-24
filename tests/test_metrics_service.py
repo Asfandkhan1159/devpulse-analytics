@@ -58,8 +58,7 @@ def test_calculate_mttr():
     fake_failures.created_at = datetime(2026, 4, 1, 8, 0, 0, tzinfo=timezone.utc)
     fake_failures.finished_at = datetime(2026, 4, 1, 10, 0, 0, tzinfo=timezone.utc)
     fake_recovery.created_at = datetime(2026, 4, 1, 12, 0, 0, tzinfo=timezone.utc)
-    print("fake_failures", fake_failures.created_at, fake_failures.finished_at)
-    print("fake_recovery", fake_recovery.created_at, fake_recovery.finished_at)
+   
     #act
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     result = calculate_mttr(project_id=1, db=mock_db, cutoff=cutoff)

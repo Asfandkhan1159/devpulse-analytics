@@ -3,7 +3,8 @@ from datetime import datetime
 
 class MetricsBase(BaseModel):
     project_id: int
-    period_days: int
+    start_date: datetime
+    end_date:datetime
     calculated_at: datetime
 
 class DeploymentFrequencyResponse(MetricsBase):

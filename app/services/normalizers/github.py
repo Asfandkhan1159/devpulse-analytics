@@ -35,8 +35,7 @@ def normalize_github_event(payload:dict,event:str)-> dict:
     elif event == "push":
         commits = payload.get("commits", [])
         ref = payload.get("ref", "")
-        print(f"Raw ref value: {ref}")
-        print(f"After replace: {ref.replace('refs/heads/', '')}")
+       
         return{
             "external_id":str(repository.get("id")),
             "project_name":repository.get("name"),

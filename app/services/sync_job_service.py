@@ -5,7 +5,7 @@ from app.db.database import SessionLocal
 import httpx
 from app.models.events import SyncJob
 
-from app.services.metrics_services import calculate_cutoff
+from app.services.metrics_services import resolve_date_range
 from app.services.normalizers.factory import normalize_event
 from app.services.webhook_service import save_event
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -47,7 +47,7 @@ def get_job_status(sync_job_id: int,db:Session):
    return status
 
 @with_retry
-async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:str,cutoff:datetime) -> dict:
+async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:str,start_date:datetime) -> dict:
     
     headers={
         "Authorization":f"Bearer {token}",
@@ -58,28 +58,28 @@ async def call_github_api(client:httpx.AsyncClient, owner:str, repo:str, token:s
     response = await client.get(f"{base_Url_github}/repos/{owner}/{repo}/actions/runs", headers=headers, 
                                 params={
                                     "per_page":100,
-                                    "created":f"{cutoff.strftime('%Y-%m-%d')}..{datetime.utcnow().strftime('%Y-%m-%d')}"
+                                    "created":f"{start_date.strftime('%Y-%m-%d')}..{datetime.utcnow().strftime('%Y-%m-%d')}"
                                 })
 
     response.raise_for_status()
     return response.json()
 
 @with_retry
-async def call_gitlab_pipelines_api(client: httpx.AsyncClient, gitlab_project_id: str, token: str, cutoff: datetime) -> list:
+async def call_gitlab_pipelines_api(client: httpx.AsyncClient, gitlab_project_id: str, token: str, start_date: datetime) -> list:
     headers = {"Authorization": f"Bearer {token}"}
     response = await client.get(
         f"{base_Url_gitlab}/projects/{gitlab_project_id}/pipelines",
         headers=headers,
         params={
             "per_page": 100,
-            "updated_after": cutoff.strftime('%Y-%m-%dT%H:%M:%SZ')
+            "updated_after": start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
         }
     )
     response.raise_for_status()
     return response.json()
 
 @with_retry
-async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, token:str, cutoff:datetime) ->dict:
+async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, token:str, start_date:datetime) ->dict:
     headers={
         "Authorization":f"Bearer {token}",
         "Accept":"application/vnd.github+json",
@@ -107,7 +107,7 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
             break
         for pr in data:
             pr_updated_at = datetime.strptime(pr["updated_at"], "%Y-%m-%dT%H:%M:%SZ")
-            if pr_updated_at >= cutoff:
+            if pr_updated_at >= start_date:
                 pull_requests.append(pr)
             else:
                 return pull_requests
@@ -117,7 +117,7 @@ async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, tok
     return pull_requests          
 
 @with_retry
-async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,cutoff):  
+async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,start_date):  
     headers = {"Authorization": f"Bearer {token}"}
     merge_requests = []
     page = 1
@@ -128,7 +128,7 @@ async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,c
         params={
             "state":"merged",
             "per_page": 100,
-            "updated_after": cutoff.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "updated_after": start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
             "page":page
         }
     )
@@ -139,7 +139,7 @@ async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,c
             break
         for mr in data:
             mr_updated_at = datetime.strptime(mr["updated_at"],"%Y-%m-%dT%H:%M:%SZ")
-            if mr_updated_at >= cutoff:
+            if mr_updated_at >= start_date:
                 merge_requests.append(mr)
             else:
                 return merge_requests
@@ -169,12 +169,12 @@ async def fetch_historical_data(
         start_job.status = "in_progress"
         db.commit()
 
-        cutoff = calculate_cutoff(90)
+        start_date,end_date = resolve_date_range(90)
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             if provider.lower() == "github":
-                runs_data = await call_github_api(client, owner, repo_name, access_token, cutoff)
-                prs_data = await call_github_prs_api(client, owner, repo_name, access_token, cutoff)
+                runs_data = await call_github_api(client, owner, repo_name, access_token, start_date)
+                prs_data = await call_github_prs_api(client, owner, repo_name, access_token, start_date)
                 
                 runs = runs_data.get("workflow_runs", [])
                 items_to_process = []
@@ -192,8 +192,8 @@ async def fetch_historical_data(
                 if not gitlab_project_id:
                     raise ValueError("gitlab_project_id is required for GitLab provider")
 
-                pipelines = await call_gitlab_pipelines_api(client, gitlab_project_id, access_token, cutoff)
-                mrs = await call_gitlab_mrs_api(client, gitlab_project_id, access_token, cutoff)
+                pipelines = await call_gitlab_pipelines_api(client, gitlab_project_id, access_token, start_date)
+                mrs = await call_gitlab_mrs_api(client, gitlab_project_id, access_token, start_date)
 
                 items_to_process = []
 

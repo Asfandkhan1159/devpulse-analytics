@@ -39,7 +39,7 @@ def save_event(data: dict, db: Session, provider: str) -> Event:
     event = Event(
         project_id=project.id,
         event_type=data["event_type"],
-        timestamp=datetime.utcnow(),
+        timestamp=data.get("timestamp") or datetime.utcnow(),
         status=data["status"],
         created_at=data["created_at"],
         finished_at=data["finished_at"],

@@ -15,7 +15,8 @@ from app.services.metrics_services import (
     resolve_date_range, calculate_deployment_frequency, calculate_lead_time,
     calculate_change_failure_rate, calculate_mttr,
     calculate_daily_deployments, calculate_daily_lead_time,
-    calculate_daily_change_failure_rate, calculate_daily_mttr
+    calculate_daily_change_failure_rate, calculate_daily_mttr,
+    calculate_engineering_overview
 )
 from pydantic import BaseModel
 
@@ -169,3 +170,15 @@ async def check_sync_status(sync_job_id: int, db: Session = Depends(get_db)):
     "total_items": status.total_items,
     "error_message": status.error_message
 }
+
+@router.get("/engineering-overview")
+def get_engineering_metrics(project_id:int, days:int=90, start_date:Optional[datetime]=None,end_date:Optional[datetime]=None, db:Session=Depends(get_db)):
+    check_project=check_project_exists(project_id,db)
+
+    
+    start_date,end_date= resolve_date_range(days,start_date,end_date)
+    result = calculate_engineering_overview(project_id,start_date,end_date,db)
+   
+    
+
+    return result

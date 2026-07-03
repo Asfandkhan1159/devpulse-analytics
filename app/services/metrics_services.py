@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_, func, text,cast,Interval
+from sqlalchemy import select, and_, func, text,cast,Interval,Integer
 from app.models.events import Event
 
 
@@ -39,6 +39,8 @@ def base_pipeline_query(project_id: int, start_date: datetime, end_date: datetim
             Event.timestamp <= end_date
         )
     )
+
+    
 
 
 def calculate_daily_deployments(project_id: int, start_date: datetime, end_date: datetime, db: Session):
@@ -225,3 +227,134 @@ def calculate_mttr(project_id: int,  start_date: datetime, end_date: datetime,db
     
     result = db.execute(query).scalar() or 0
     return {"avg_mttr": result}
+
+def calculate_pr_stats(project_id:int, start_date:datetime,end_date:datetime,db:Session):
+    common_conditions= and_(
+        Event.project_id == project_id,
+        Event.event_type == "merge_request",
+        Event.timestamp.between(start_date,end_date)
+    )
+
+    total_prs= db.execute(
+        select(func.count(Event.id)).where(
+            and_(common_conditions)
+        )
+    ).scalar() or 0
+
+    successful_prs = db.execute(
+        select(func.count(Event.id)).where(
+            and_(common_conditions,Event.status =="success")
+        )
+    ).scalar() or 0
+
+    return{
+        "total_prs_opened":total_prs,
+        "successful_prs_merged":successful_prs
+    }
+
+def calculate_pipeline_stats(project_id:int,start_date:datetime,end_date:datetime,db:Session):
+    common_conditions= and_(
+        Event.project_id == project_id,
+        Event.event_type == "pipeline",
+        Event.timestamp.between(start_date,end_date)
+
+    )
+    
+    total_pipelines = db.execute(
+        select(func.count(Event.id)).where(
+            and_(common_conditions)
+            )
+        ).scalar() or 0
+    
+    successful_pipelines = db.execute(
+        select(func.count(Event.id)).where(
+            and_(common_conditions,Event.status == "success")
+        )
+    ).scalar() or 0
+
+    pipeline_success_rate = (successful_pipelines/total_pipelines*100) if total_pipelines > 0 else 0
+
+    mean_pipeline_duration_hours = db.execute(
+        select(func.avg(func.extract('epoch', Event.finished_at - Event.created_at) / 3600))
+        .where(and_(
+            Event.project_id == project_id,
+            Event.event_type == "pipeline",
+            Event.status == "success",
+            Event.timestamp >= start_date,
+            Event.timestamp <= end_date
+        ))
+    ).scalar() or 0.0
+
+    return {
+        "total_pipeline_runs":total_pipelines,
+        "pipelines_success_rate":pipeline_success_rate,
+        "mean_pipeline_duration_hours":mean_pipeline_duration_hours
+    }
+
+def calculate_contributor_stats(project_id:int,start_date:datetime,end_date:datetime,db:Session):
+    total_developer = db.execute(
+        select(func.count(func.distinct(Event.actor))).where(
+            and_(Event.project_id == project_id,
+                 Event.event_type == "push",
+                 Event.timestamp.between(start_date,end_date)
+                 )
+        )
+    ).scalar() or 0
+
+
+    prs_query = select(Event.actor,func.count(Event.id).label("total_prs"),
+               func.count(Event.id).filter(Event.status =="success").label("merged_prs")
+               ).where(and_(
+            Event.project_id == project_id,
+            Event.event_type == "merge_request",
+            Event.timestamp.between(start_date,end_date)
+        )).group_by(Event.actor)
+
+        
+      
+    
+    prs_results = db.execute(prs_query).all()
+    prs_per_member = [{"actor":row.actor, "total_prs":row.total_prs, "merged_prs":row.merged_prs} for row in prs_results]
+
+    commits_query = select(
+        Event.actor,
+        func.sum(cast(Event.commit_count, Integer)).label("total_commits"),
+        func.count(Event.id).label("total_pushes"),
+        func.count(func.distinct(Event.branch)).label("branches_affected"),
+        func.array_agg(func.distinct(Event.branch)).label("branches_names")
+    ).where(and_(
+        Event.project_id == project_id,
+        Event.event_type == "push",
+        Event.timestamp.between(start_date,end_date)
+    )).group_by(Event.actor)
+
+    commits_result = db.execute(commits_query).all()
+    commits_distribution=[{"actor":row.actor,"total_commits":row.total_commits,"total_pushes":row.total_pushes,"branch_names":row.branch_names, "branches_affected":row.branches_affected}for row in commits_result]
+    total_days = (end_date - start_date).days or 1
+    active_days = db.execute(
+    select(func.count(func.distinct(func.date(Event.timestamp))))
+    .where(and_(
+        Event.project_id == project_id,
+        Event.event_type == "push",
+        Event.timestamp.between(start_date, end_date)
+    ))).scalar() or 0
+
+    coding_days_percentage = (active_days / total_days) * 100
+
+    return {
+    "total_developers": total_developer,
+    "prs_per_member": prs_per_member,
+    "commits_distribution": commits_distribution,
+    "coding_days_percentage": coding_days_percentage
+    }
+
+def calculate_engineering_overview(project_id:int, start_date:datetime, end_date:datetime,db:Session):
+    pr_stats = calculate_pr_stats(project_id,start_date,end_date,db)
+    pipeline_stats = calculate_pipeline_stats(project_id,start_date,end_date,db)
+    contributor_stats = calculate_contributor_stats(project_id,start_date,end_date,db)
+
+    return{
+        **pr_stats,
+        **pipeline_stats,
+        **contributor_stats
+    }

@@ -1,3 +1,6 @@
+def normalize_status(raw_status: str) -> str:
+    return "failure" if raw_status == "failed" else raw_status
+
 def normalize_gitlab_event(payload: dict):
     # Detect if this is a webhook payload or backfill API payload
     if payload.get("object_attributes"):
@@ -10,7 +13,7 @@ def normalize_gitlab_event(payload: dict):
             "project_name": str(project.get("name")),
             "web_url": str(project.get("web_url")),
             "event_type": payload.get("object_kind"),
-            "status": object_attributes.get("status"),
+            "status": normalize_status(object_attributes.get("status")),
             "created_at": object_attributes.get("created_at"),
             "finished_at": object_attributes.get("finished_at"),
             "timestamp": object_attributes.get("created_at"),
@@ -44,7 +47,7 @@ def normalize_gitlab_event(payload: dict):
                 "project_name": None,
                 "web_url": payload.get("web_url"),
                 "event_type": "pipeline",
-                "status": payload.get("status"),
+                "status": normalize_status(payload.get("status")),
                 "created_at": payload.get("created_at"),
                 "finished_at": payload.get("updated_at"),
                 "timestamp": payload.get("created_at"),

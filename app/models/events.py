@@ -19,6 +19,8 @@ class Event(Base):
     branch=Column(String, nullable=True)
     commit_count = Column(String, nullable=True)
     external_event_id = Column(String, nullable=True, index=True)
+    actor_email = Column(String, nullable=True)
+    actor_username = Column(String, nullable=True)
 
 
 

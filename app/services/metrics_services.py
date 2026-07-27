@@ -5,6 +5,7 @@ from sqlalchemy import select, and_, func, text,cast,Interval,Integer
 from app.models.events import Event
 
 
+
 def calculate_frequency_label(daily_average: float) -> str:
     if daily_average >= 1.0:
         return "Multiple Deployments per Day"
@@ -291,70 +292,96 @@ def calculate_pipeline_stats(project_id:int,start_date:datetime,end_date:datetim
         "mean_pipeline_duration_hours":mean_pipeline_duration_hours
     }
 
-def calculate_contributor_stats(project_id:int,start_date:datetime,end_date:datetime,db:Session):
+def calculate_contributor_stats(project_id: int, start_date: datetime, end_date: datetime, db: Session):
+    identity = func.coalesce(Event.actor_email, Event.actor_username, Event.actor)
+
     total_developer = db.execute(
-        select(func.count(func.distinct(Event.actor))).where(
+        select(func.count(func.distinct(identity))).where(
             and_(Event.project_id == project_id,
-                 Event.event_type == "push",
-                 Event.timestamp.between(start_date,end_date)
-                 )
+                 Event.event_type == "commit",
+                 Event.timestamp.between(start_date, end_date))
         )
     ).scalar() or 0
 
-
-    prs_query = select(Event.actor,func.count(Event.id).label("total_prs"),
-               func.count(Event.id).filter(Event.status =="success").label("merged_prs")
+    prs_query = select(Event.actor, func.count(Event.id).label("total_prs"),
+               func.count(Event.id).filter(Event.status == "success").label("merged_prs")
                ).where(and_(
             Event.project_id == project_id,
             Event.event_type == "merge_request",
-            Event.timestamp.between(start_date,end_date)
+            Event.timestamp.between(start_date, end_date)
         )).group_by(Event.actor)
 
-        
-      
-    
     prs_results = db.execute(prs_query).all()
-    prs_per_member = [{"actor":row.actor, "total_prs":row.total_prs, "merged_prs":row.merged_prs} for row in prs_results]
+    prs_per_member = [{"actor": row.actor, "total_prs": row.total_prs, "merged_prs": row.merged_prs} for row in prs_results]
 
-    commits_query = select(
-        Event.actor,
-        func.sum(cast(Event.commit_count, Integer)).label("total_commits"),
+    commit_stats_query = select(
+        identity.label("identity"),
+        func.max(Event.actor).label("display_name"),
+        func.count(Event.id).label("total_commits")
+    ).where(and_(
+        Event.project_id == project_id,
+        Event.event_type == "commit",
+        Event.timestamp.between(start_date, end_date)
+    )).group_by(identity)
+
+    commit_stats = {row.identity: row for row in db.execute(commit_stats_query).all()}
+
+    push_stats_query = select(
+        identity.label("identity"),
+        func.max(Event.actor).label("display_name"),
         func.count(Event.id).label("total_pushes"),
         func.count(func.distinct(Event.branch)).label("branches_affected"),
         func.array_agg(func.distinct(Event.branch)).label("branches_names")
     ).where(and_(
         Event.project_id == project_id,
         Event.event_type == "push",
-        Event.timestamp.between(start_date,end_date)
-    )).group_by(Event.actor)
+        Event.timestamp.between(start_date, end_date)
+    )).group_by(identity)
 
-    commits_result = db.execute(commits_query).all()
-    commits_distribution=[{"actor":row.actor,"total_commits":row.total_commits,"total_pushes":row.total_pushes,"branch_names":row.branch_names, "branches_affected":row.branches_affected}for row in commits_result]
+    push_stats = {row.identity: row for row in db.execute(push_stats_query).all()}
+
+    all_identities = set(commit_stats.keys()) | set(push_stats.keys())
+    commits_distribution = []
+    for ident in all_identities:
+        commit_row = commit_stats.get(ident)
+        push_row = push_stats.get(ident)
+        display_name = (commit_row.display_name if commit_row else None) or (push_row.display_name if push_row else None)
+        commits_distribution.append({
+            "actor": display_name,
+            "total_commits": commit_row.total_commits if commit_row else 0,
+            "total_pushes": push_row.total_pushes if push_row else 0,
+            "branches_affected": push_row.branches_affected if push_row else 0,
+            "branch_names": push_row.branches_names if push_row else []
+        })
+
     total_days = (end_date - start_date).days or 1
     active_days = db.execute(
-    select(func.count(func.distinct(func.date(Event.timestamp))))
-    .where(and_(
-        Event.project_id == project_id,
-        Event.event_type == "push",
-        Event.timestamp.between(start_date, end_date)
-    ))).scalar() or 0
+        select(func.count(func.distinct(func.date(Event.timestamp))))
+        .where(and_(
+            Event.project_id == project_id,
+            Event.event_type == "push",
+            Event.timestamp.between(start_date, end_date)
+        ))
+    ).scalar() or 0
 
     coding_days_percentage = (active_days / total_days) * 100
 
     return {
-    "total_developers": total_developer,
-    "prs_per_member": prs_per_member,
-    "commits_distribution": commits_distribution,
-    "coding_days_percentage": coding_days_percentage
+        "total_developers": total_developer,
+        "prs_per_member": prs_per_member,
+        "commits_distribution": commits_distribution,
+        "coding_days_percentage": coding_days_percentage
     }
 
-def calculate_engineering_overview(project_id:int, start_date:datetime, end_date:datetime,db:Session):
-    pr_stats = calculate_pr_stats(project_id,start_date,end_date,db)
-    pipeline_stats = calculate_pipeline_stats(project_id,start_date,end_date,db)
-    contributor_stats = calculate_contributor_stats(project_id,start_date,end_date,db)
+def calculate_engineering_overview(project_id: int, start_date: datetime, end_date: datetime, db: Session):
+  
+    pr_stats = calculate_pr_stats(project_id, start_date, end_date, db)
+   
+    pipeline_stats = calculate_pipeline_stats(project_id, start_date, end_date, db)
+    
+    contributor_stats = calculate_contributor_stats(project_id, start_date, end_date, db)
+    
 
-    return{
-        **pr_stats,
-        **pipeline_stats,
-        **contributor_stats
-    }
+  
+
+    return {**pr_stats, **pipeline_stats, **contributor_stats}

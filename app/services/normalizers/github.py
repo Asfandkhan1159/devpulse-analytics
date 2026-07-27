@@ -1,4 +1,12 @@
 
+def normalize_github_status(conclusion:str) -> str:
+    mapping = {
+        "success":"success",
+        "failure":"failure",
+        "timed_out":"failure"
+    }
+    return mapping.get(conclusion,conclusion)
+
 def normalize_github_event(payload:dict,event:str)-> dict:
     repository = payload.get("repository") or payload.get("base", {}).get("repo", {})
     if event == "workflow_run":
@@ -9,7 +17,7 @@ def normalize_github_event(payload:dict,event:str)-> dict:
             "project_name":repository.get("name"),
             "web_url":repository.get("html_url"),
             "event_type":"pipeline",
-            "status":workflow.get("conclusion"),
+            "status": normalize_github_status(workflow.get("conclusion")),
             "created_at":workflow.get("created_at"),
             "finished_at":workflow.get("updated_at"),
             "timestamp": workflow.get("created_at"),

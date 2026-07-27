@@ -79,6 +79,44 @@ async def call_gitlab_pipelines_api(client: httpx.AsyncClient, gitlab_project_id
     return response.json()
 
 @with_retry
+async def call_gitlab_commits_api(client:httpx.AsyncClient,gitlab_project_id:str,token:str, start_date:datetime)-> list:
+    headers = {"Authorization":f"Bearer {token}"}
+    commits_events=[]
+    page= 1
+    
+  
+
+    while True:
+        query_params={
+        "since": start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        "per_page":100,
+        
+        "page":page
+        }
+        response = await client.get(
+            f"{base_Url_gitlab}/projects/{gitlab_project_id}/repository/commits",
+            headers=headers,
+            params=query_params
+        )
+
+        response.raise_for_status()
+        data= response.json()
+
+        if not data:
+            break
+        for commits in data:
+            commits_count = datetime.strptime(commits["committed_date"], "%Y-%m-%dT%H:%M:%S.%f%z").replace(tzinfo=None)
+            if commits_count >=start_date:
+                commits_events.append(commits)
+            else:
+                return commits_events
+        if len(data)<100:
+            break
+        page +=1
+
+    return commits_events            
+
+@with_retry
 async def call_github_prs_api(client:httpx.AsyncClient, owner:str, repo:str, token:str, start_date:datetime) ->dict:
     headers={
         "Authorization":f"Bearer {token}",
@@ -146,7 +184,40 @@ async def call_gitlab_mrs_api(client:httpx.AsyncClient,gitlab_project_id,token,s
         if len(data) < 100:
             break
         page +=1
-    return merge_requests            
+    return merge_requests
+
+@with_retry
+async def call_gitlab_push_events_api(client:httpx.AsyncClient,gitlab_project_id,token,start_date):
+    headers = {"Authorization":f"Bearer {token}"}  
+    push_events = []
+    page = 1
+    while True:
+        response = await client.get(
+            f"{base_Url_gitlab}/projects/{gitlab_project_id}/events",
+            headers=headers,
+            params={
+                "action":"pushed",
+                "after": start_date.strftime('%Y-%m-%d'),
+                "per_page":100,
+                "page":page
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if not data:
+            break
+        for pushes in data:
+            push_count = datetime.strptime(pushes["created_at"], "%Y-%m-%dT%H:%M:%S.%fZ")   
+            if push_count >= start_date:
+                push_events.append(pushes)
+            else:
+                return push_events
+        if len(data) < 100:
+            break
+        page +=1
+
+    return push_events             
 
 
 
@@ -169,7 +240,8 @@ async def fetch_historical_data(
         start_job.status = "in_progress"
         db.commit()
 
-        start_date,end_date = resolve_date_range(90)
+        start_date,end_date = resolve_date_range(365)
+        print(f"DEBUG: start_date = {start_date}")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             if provider.lower() == "github":
@@ -178,11 +250,13 @@ async def fetch_historical_data(
                 
                 runs = runs_data.get("workflow_runs", [])
                 items_to_process = []
+                VALID_CONCLUSIONS ={"success","failure","timed_out"}
 
                 for run in runs:
-                    if run.get("conclusion") is None:
+                    conclusion = run.get("conclusion")
+                    if conclusion not in VALID_CONCLUSIONS:
                         continue
-                    items_to_process.append((run, 'workflow_run'))
+                    items_to_process.append((run,'workflow_run'))
 
                 for pr in prs_data:
                     if pr.get("merged_at"):   # Only merged PRs? Or remove this if you want all
@@ -194,16 +268,27 @@ async def fetch_historical_data(
 
                 pipelines = await call_gitlab_pipelines_api(client, gitlab_project_id, access_token, start_date)
                 mrs = await call_gitlab_mrs_api(client, gitlab_project_id, access_token, start_date)
-
+                pushevents = await call_gitlab_push_events_api(client, gitlab_project_id, access_token, start_date)
+                print(f"DEBUG: fetched {len(pushevents)} push events, {sum(1 for p in pushevents if p.get('push_data'))} have push_data")
+                commits = await call_gitlab_commits_api(client,gitlab_project_id,access_token,start_date)
                 items_to_process = []
-
+                GITLAB_VALID_STATUSES = {"success", "failed"}
                 for pipeline in pipelines:
-                    if pipeline.get("status") in ["success", "failed"]:  # Only completed ones
-                        items_to_process.append((pipeline, 'pipeline'))
+                   
+                    if pipeline.get("status") not in GITLAB_VALID_STATUSES:  # Only completed ones
+                        continue
+                    items_to_process.append((pipeline, 'pipeline'))
 
                 for mr in mrs:
                     if mr.get("merged_at"):   # Adjust filter as needed
                         items_to_process.append((mr, 'merge_request'))
+                for pushes in pushevents:
+                    if pushes.get("push_data"):
+                        items_to_process.append((pushes,'push'))
+                for commit in commits:
+                    if len(commit.get("parent_ids",[]))<=1:
+                        items_to_process.append((commit,'commit'))
+                print(f"DEBUG: queued {sum(1 for x in items_to_process if x[1] == 'commit')} commit items out of {len(commits)} fetched")                        
 
             else:
                 raise ValueError(f"Unsupported provider: {provider}")
@@ -220,12 +305,20 @@ async def fetch_historical_data(
             return
 
         for index, (payload, event_type) in enumerate(items_to_process):
+            if event_type == 'commit':
+                print(f"DEBUG: processing commit {payload.get('id')}")
             normalized_data = normalize_event(
                 provider=provider, 
                 payload=payload, 
-                event=event_type
+                event=event_type,
+                gitlab_project_id=gitlab_project_id
             )
+            if event_type == 'commit':
+                print(f"DEBUG: normalized commit → {normalized_data}")
+
             save_event(data=normalized_data, db=db, provider=provider)
+            if event_type == 'commit':
+                print(f"DEBUG: saved commit {payload.get('id')}")
 
             processed_count = index + 1
             start_job.processed_items = processed_count

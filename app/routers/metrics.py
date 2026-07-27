@@ -19,6 +19,7 @@ from app.services.metrics_services import (
     calculate_engineering_overview
 )
 from pydantic import BaseModel
+import time
 
 class ProjectRegisterRequest(BaseModel):
     external_id: str
@@ -172,13 +173,12 @@ async def check_sync_status(sync_job_id: int, db: Session = Depends(get_db)):
 }
 
 @router.get("/engineering-overview")
-def get_engineering_metrics(project_id:int, days:int=90, start_date:Optional[datetime]=None,end_date:Optional[datetime]=None, db:Session=Depends(get_db)):
-    check_project=check_project_exists(project_id,db)
-
-    
-    start_date,end_date= resolve_date_range(days,start_date,end_date)
-    result = calculate_engineering_overview(project_id,start_date,end_date,db)
-   
-    
-
+def get_engineering_metrics(project_id: int, days: int = 90, start_date=None, end_date=None, db: Session = Depends(get_db)):
+    t_start = time.time()
+    check_project_exists(project_id, db)
+    t_check = time.time()
+    start_date, end_date = resolve_date_range(days, start_date, end_date)
+    result = calculate_engineering_overview(project_id, start_date, end_date, db)
+    t_end = time.time()
+    print(f"check_project: {t_check-t_start:.2f}s | overview_calc: {t_end-t_check:.2f}s | TOTAL: {t_end-t_start:.2f}s")
     return result

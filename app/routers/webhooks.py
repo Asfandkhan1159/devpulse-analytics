@@ -6,6 +6,7 @@ from app.config import Settings
 from app.services.webhook_service import save_event
 from app.db.database import get_db
 from app.services.normalizers.factory import normalize_event
+from app.services.normalizers.gitlab import normalize_status_names
 
 router = APIRouter()
 
@@ -23,6 +24,10 @@ async def gitlab_webhook(x_gitlab_token:str = Header(...), x_gitlab_event:str = 
         raise HTTPException(status_code=401, detail="Unauthorized")
     if (x_gitlab_event not in allowed_events):
         return {"message": f"Event '{x_gitlab_event}' is not allowed. Ignoring."}
+    
+    event_type = normalize_status_names(x_gitlab_event)
+    if event_type == "unknown":
+        return {"message": f"Event '{x_gitlab_event}' is not recognized. Ignoring."}
 
     # 4. process the payload
     normalized= normalize_event(provider='gitlab', payload=payload)
